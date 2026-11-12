@@ -22,6 +22,7 @@ from pathlib import Path
 
 from . import mechanism as default_mechanism
 from .context import NoteEvent, PlaybackContext, SessionContext
+from .interlude import STYLES, detect_key, interlude_events
 from .midi import find_midi_files, load_events
 from .output import OutputFinished
 
@@ -57,7 +58,8 @@ class _Session:
 
 class Player:
     def __init__(self, synth, out, sample_rate, block_frames, gap_seconds,
-                 session_active=None, mechanism=None, humanize_window=0.05, session_length=None):
+                 session_active=None, mechanism=None, humanize_window=0.05, session_length=None,
+                 interlude=None):
         self.synth = synth
         self.out = out
         self.sample_rate = sample_rate
@@ -68,6 +70,8 @@ class Player:
         self.mechanism = mechanism or default_mechanism
         self.humanize_window = humanize_window
         self.session_length = session_length
+        # None, or an interlude style to play before each song (interlude.py).
+        self.interlude = interlude
         self._in_session = False
         self._hook_errors = Counter()
 
@@ -142,9 +146,22 @@ class Player:
         # Parse first, so a bad file fails before anything is cut off.
         events = load_events(path)
         length = events[-1].time if events else 0.0
-        log.info("playing %s (%.1fs, %d events)", Path(path).name, length, len(events))
         self.synth.reset()
+        if self.interlude:
+            key = detect_key(events)
+            if key is not None:
+                style = self.interlude
+                if style == "alternate":
+                    style = STYLES[(len(session.history) - 1) % len(STYLES)]
+                log.info("interlude (%s) in %s", style, key)
+                self._play_events(interlude_events(key, style), path, session, interlude=True)
+                # Keep the interlude's last note ringing into the song.
+                self.synth.reset(cut=False)
+        log.info("playing %s (%.1fs, %d events)", Path(path).name, length, len(events))
+        self._play_events(events, path, session)
 
+    def _play_events(self, events, path, session, interlude=False) -> None:
+        length = events[-1].time if events else 0.0
         sr = self.sample_rate
         window = round(self.humanize_window * sr)
         song_start = self.now
@@ -160,7 +177,7 @@ class Player:
             return PlaybackContext(
                 elapsed=(self.now - session.start_frame) / sr, session_length=self.session_length,
                 song=Path(path), song_index=song_index, song_length=length,
-                song_time=song_time, song_position=position)
+                song_time=song_time, song_position=position, interlude=interlude)
 
         try:
             for event in events:
@@ -195,7 +212,7 @@ class Player:
                 heapq.heappush(queue, (frame + offset, next(seq), msg))
             self._flush(queue, math.inf)
         finally:
-            self._report_hook_errors(path)
+            self._report_hook_errors(f"the interlude before {Path(path).name}" if interlude else path)
 
     def _play_or_recover(self, path, session) -> bool:
         """Play one song; on failure log it and stream silence. True if it played."""

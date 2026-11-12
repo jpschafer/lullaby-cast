@@ -40,7 +40,7 @@ class FakeSynth:
         self.handled = []  # (frame, message type, note)
         self.resets = 0
 
-    def reset(self):
+    def reset(self, cut=True):
         self.resets += 1
 
     def handle(self, msg):

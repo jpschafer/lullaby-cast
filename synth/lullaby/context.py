@@ -24,6 +24,7 @@ class PlaybackContext:
     song_length: float               # the file's own length in seconds (before scale_time)
     song_time: float                 # where we are in the file's timeline (before scale_time)
     song_position: float             # seconds of this song played so far (after scale_time)
+    interlude: bool = False          # True during the short phrase played before `song`
 
 
 @dataclass(frozen=True)

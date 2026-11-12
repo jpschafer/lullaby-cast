@@ -107,7 +107,8 @@ def run_synth(cfg, out) -> None:
         log.info("waiting for a listener on %s (streaming silence until then)", cfg.icecast_mount)
     player = Player(synth, out, cfg.sample_rate, cfg.block_frames, cfg.song_gap_seconds,
                     session_active=session_active, humanize_window=cfg.humanize_window,
-                    session_length=cfg.session_length)
+                    session_length=cfg.session_length,
+                    interlude=None if cfg.interlude == "off" else cfg.interlude)
     try:
         if cfg.mode == "file":
             player.loop_file(cfg.midi_file, cfg.midi_dir)

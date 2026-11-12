@@ -34,11 +34,13 @@ class Synth:
             log.info("using preset %d:%d (%s) on all melodic channels", bank, preset, name)
         self.reset()
 
-    def reset(self) -> None:
-        """Cut all sound and restore starting programs and controllers.
-        Called before each song and after errors."""
+    def reset(self, cut=True) -> None:
+        """Restore starting programs and controllers. With `cut`, also stop
+        all sound at once (before songs, after errors); without, notes
+        already released ring out naturally."""
         for ch in range(16):
-            self._fs.cc(ch, CC_ALL_SOUND_OFF, 0)
+            if cut:
+                self._fs.cc(ch, CC_ALL_SOUND_OFF, 0)
             self._fs.cc(ch, CC_RESET_CONTROLLERS, 0)
             if ch == PERCUSSION_CHANNEL:
                 self._fs.program_select(ch, self._sfid, 128, 0)

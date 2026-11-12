@@ -9,6 +9,7 @@ from dataclasses import dataclass
 MODES = ("tone", "file", "playlist")
 SYNTH_MODES = ("file", "playlist")  # modes that need FluidSynth and a SoundFont
 SESSION_STARTS = ("listener", "always")
+INTERLUDES = ("phrase", "chords", "alternate", "off")
 MP3_SAMPLE_RATES = (22050, 24000, 32000, 44100, 48000)
 HEARTBEAT_PATH = "/tmp/lullaby-heartbeat"
 
@@ -41,6 +42,8 @@ class Config:
     session_length: float
     # How far shape_note may move a note, in seconds.
     humanize_window: float
+    # Interlude style before each song (see interlude.py), or None for silence.
+    interlude: str
     sample_rate: int
     mp3_bitrate: str
     # How far audio may be rendered ahead of the wall clock.
@@ -109,11 +112,12 @@ class Config:
             gain=get_float("GAIN", 0.8),
             force_preset=get_preset("FORCE_PRESET", "0:10"),
             mute_percussion=get_bool("MUTE_PERCUSSION", True),
-            song_gap_seconds=get_float("SONG_GAP_SECONDS", 4.0),
+            song_gap_seconds=get_float("SONG_GAP_SECONDS", 2.0),
             session_start=get("SESSION_START", "listener"),
             session_grace_seconds=get_float("SESSION_GRACE_SECONDS", 20.0),
             session_length=(get_float("SESSION_MINUTES", 0) * 60) if env.get("SESSION_MINUTES") else None,
             humanize_window=get_float("HUMANIZE_WINDOW_MS", 50) / 1000,
+            interlude=get("INTERLUDE", "alternate").strip().lower(),
             sample_rate=get_int("SAMPLE_RATE", 44100),
             mp3_bitrate=get("MP3_BITRATE", "128k"),
             lead_seconds=get_float("LEAD_SECONDS", 0.25),
@@ -145,6 +149,8 @@ class Config:
             errors.append("SESSION_MINUTES must be above 0, or empty")
         if not 0 <= cfg.humanize_window <= 0.5:
             errors.append(f"HUMANIZE_WINDOW_MS must be between 0 and 500 (got {cfg.humanize_window * 1000:g})")
+        if cfg.interlude not in INTERLUDES:
+            errors.append(f"INTERLUDE must be one of {INTERLUDES} (got {cfg.interlude!r})")
         if cfg.mode in SYNTH_MODES and cfg.soundfont and not os.path.isfile(cfg.soundfont):
             errors.append(f"SoundFont not found: {cfg.soundfont} (put it in the soundfonts "
                           f"folder and set SOUNDFONT to its path inside the container)")

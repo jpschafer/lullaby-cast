@@ -35,6 +35,7 @@ synth/
   lullaby/                the synth package (writes PCM to stdout)
     mechanism.py          ← the musical mechanism: three hooks (yours)
     context.py            what the hooks receive
+    interlude.py          key detection + the short figure played before each song
     midi.py               MIDI file → timed events
     synth.py              FluidSynth wrapper (forced preset, percussion mute)
     player.py             sample-accurate playback, sessions, playlist, error recovery
@@ -108,10 +109,13 @@ scripts/local-play.sh               # first run creates .venv with Python 3.13
 scripts/local-play.sh --wav /tmp/test.wav --seconds 20 && afplay /tmp/test.wav
 ```
 
-### What you should hear (stage 3)
+### What you should hear
 
-Every file in `midi/` on the music box, in alphabetical order, with about 4 s
-of ringing and silence between songs, wrapping around at the end.
+Every file in `midi/` on the music box, in alphabetical order, wrapping around
+at the end. Before each song there's a short interlude in that song's key:
+broken chords (I–IV–I–V) before one song, a little "da da da da, duh dah dah"
+phrase before the next. The first song gets one too, which also covers the
+second or two a Cast device may lose while it buffers.
 
 Through Icecast, the playlist starts only when you connect. Watch
 `docker compose logs -f synth` while you run `scripts/listen.sh`:
@@ -119,6 +123,7 @@ Through Icecast, the playlist starts only when you connect. Watch
 ```
 listeners on /lullaby.mp3: 0 -> 1
 session started
+interlude (chords) in F major
 playing brahms-lullaby-wiegenlied-piano.mid (72.0s, 409 events)
 ...
 listeners on /lullaby.mp3: 1 -> 0
@@ -164,6 +169,10 @@ plumbing calls three hooks; the placeholders change nothing.
 | `scale_time(delta, ctx)` | at the start of every gap between events | seconds to actually wait (`2 * delta` = half speed); e.g. a spring winding down |
 | `shape_note(note, ctx)` | for every struck note | the note with new `velocity`/`offset` (±`HUMANIZE_WINDOW_MS`), or `None` to drop it; e.g. humanization |
 
+Interlude notes go through `scale_time` and `shape_note` too, so a wind-down
+slows them as well; `ctx.interlude` is `True` while one plays (and `ctx.song`
+is the song it introduces).
+
 The contexts (`context.py`) carry `elapsed` (seconds since the session
 started), `session_length` (from `SESSION_MINUTES`), and for the playback
 hooks, the song, its length, and where in it you are, both in the file's own
@@ -188,6 +197,20 @@ Run the unit tests after changing the plumbing (not needed for the mechanism):
 cd synth && ../.venv/bin/python -m unittest discover -s tests
 ```
 
+## Interludes
+
+`interlude.py` finds each song's key (Krumhansl–Schmuckler: how long each
+pitch class sounds, matched against major and minor key profiles) and plays
+one of two figures in it on channel 1, at 72 bpm:
+
+- **chords**: root, 3rd, 5th, octave, 5th, 3rd over I, IV, I, then V held, so
+  the song's start resolves it. V is major in minor keys too.
+- **phrase**: scale degrees 1 2 3 4 (eighths), 5, 3 (quarters), 1 (half).
+
+Both are plain data at the top of the file (`PHRASE`, `PROGRESSION`,
+`TEMPO_BPM`), so they're easy to change. The detected key is in the log line
+`interlude (chords) in G minor`.
+
 ## Configuration (.env)
 
 | Variable | Default | Meaning |
@@ -210,7 +233,8 @@ cd synth && ../.venv/bin/python -m unittest discover -s tests
 | `MUTE_PERCUSSION` | `true` | Drop drum notes (MIDI channel 10) |
 | `GAIN` | `0.8` | FluidSynth output level (FluidSynth's own default, 0.2, is very quiet) |
 | `MIDI_FILE` | (empty) | `file` mode: file to loop, e.g. `/midi/song.mid`; empty = first in the folder |
-| `SONG_GAP_SECONDS` | `4` | Time between plays; the last notes ring out in it |
+| `SONG_GAP_SECONDS` | `2` | Pause after each song for the last notes to ring out |
+| `INTERLUDE` | `alternate` | Before each song: `chords`, `phrase`, `alternate` (taking turns), or `off` (silence) |
 | `SAMPLE_RATE` | `44100` | Synth and MP3 sample rate |
 | `MP3_BITRATE` | `128k` | MP3 bitrate |
 | `TZ` | `UTC` | Timezone for log timestamps |
