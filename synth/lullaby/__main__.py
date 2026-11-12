@@ -3,6 +3,7 @@
     python -m lullaby                      # live, paced, to stdout (what the supervisor runs)
     python -m lullaby | ffplay -f s16le -ar 44100 -ch_layout stereo -
     python -m lullaby --wav out.wav --seconds 20   # offline, as fast as possible
+    python -m lullaby --mode tone                  # test tone instead of MIDI
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ import wave
 
 from .clock import Pacer, UnpacedClock
 from .config import Config, ConfigError
-from .output import CHANNELS, PcmOutput
+from .output import CHANNELS, OutputFinished, PcmOutput
 from .tone import tone_blocks
 
 log = logging.getLogger("lullaby")
@@ -59,17 +60,22 @@ def main(argv=None) -> int:
         wav.setnchannels(CHANNELS)
         wav.setsampwidth(2)
         wav.setframerate(cfg.sample_rate)
-        out = PcmOutput(UnpacedClock(cfg.sample_rate, cfg.lead_seconds), stream=_WavStream(wav))
+        out = PcmOutput(UnpacedClock(cfg.sample_rate, cfg.lead_seconds),
+                        stream=_WavStream(wav), max_frames=max_frames)
     else:
-        out = PcmOutput(Pacer(cfg.sample_rate, cfg.lead_seconds), heartbeat_path=cfg.heartbeat_path)
+        out = PcmOutput(Pacer(cfg.sample_rate, cfg.lead_seconds),
+                        heartbeat_path=cfg.heartbeat_path, max_frames=max_frames)
 
     log.info("mode=%s sample_rate=%d block=%d frames, output=%s",
              cfg.mode, cfg.sample_rate, cfg.block_frames, args.wav or "stdout")
     try:
-        for block in tone_blocks(cfg.sample_rate, cfg.block_frames):
-            out.write(block)
-            if max_frames is not None and out.pacer.frames >= max_frames:
-                break
+        if cfg.mode == "tone":
+            for block in tone_blocks(cfg.sample_rate, cfg.block_frames):
+                out.write(block)
+        else:
+            run_file(cfg, out)
+    except OutputFinished:
+        pass
     except BrokenPipeError:
         # Already logged; point stdout at /dev/null so the exit-time flush
         # doesn't print a second, confusing traceback.
@@ -82,6 +88,21 @@ def main(argv=None) -> int:
             wav.close()
             log.info("wrote %.1fs to %s", out.pacer.audio_time, args.wav)
     return 0
+
+
+def run_file(cfg, out) -> None:
+    # Imported here so tone mode works without FluidSynth installed.
+    from .player import Player
+    from .synth import Synth
+
+    log.info("SoundFont %s, gain %.2f", cfg.soundfont, cfg.gain)
+    synth = Synth(cfg.soundfont, cfg.sample_rate, cfg.gain,
+                  force_preset=cfg.force_preset, mute_percussion=cfg.mute_percussion)
+    try:
+        Player(synth, out, cfg.sample_rate, cfg.block_frames, cfg.song_gap_seconds) \
+            .loop_file(cfg.midi_file, cfg.midi_dir)
+    finally:
+        synth.close()
 
 
 class _WavStream:

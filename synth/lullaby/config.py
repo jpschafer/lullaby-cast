@@ -6,7 +6,8 @@ import os
 import re
 from dataclasses import dataclass
 
-MODES = ("tone",)
+MODES = ("tone", "file")
+SYNTH_MODES = ("file",)  # modes that need FluidSynth and a SoundFont
 MP3_SAMPLE_RATES = (22050, 24000, 32000, 44100, 48000)
 HEARTBEAT_PATH = "/tmp/lullaby-heartbeat"
 
@@ -24,6 +25,13 @@ class Config:
     mode: str
     soundfont: str
     midi_dir: str
+    # One file to loop in "file" mode; None = first file in midi_dir.
+    midi_file: str
+    gain: float
+    # (bank, preset) forced on every melodic channel, or None.
+    force_preset: tuple
+    mute_percussion: bool
+    song_gap_seconds: float
     sample_rate: int
     mp3_bitrate: str
     # How far audio may be rendered ahead of the wall clock.
@@ -59,14 +67,40 @@ class Config:
                 errors.append(f"{name} must be a number (got {raw!r})")
                 return default
 
+        def get_bool(name, default):
+            raw = env.get(name, "").strip().lower()
+            if raw == "":
+                return default
+            if raw in ("1", "true", "yes", "on"):
+                return True
+            if raw in ("0", "false", "no", "off"):
+                return False
+            errors.append(f"{name} must be true or false (got {raw!r})")
+            return default
+
+        def get_preset(name, default):
+            raw = env.get(name, default).strip().lower()
+            if raw in ("", "off", "none"):
+                return None
+            m = re.fullmatch(r"(\d+):(\d+)", raw)
+            if not m or int(m.group(1)) > 128 or int(m.group(2)) > 127:
+                errors.append(f"{name} must be bank:preset like 0:10, or off (got {raw!r})")
+                return None
+            return int(m.group(1)), int(m.group(2))
+
         cfg = cls(
             icecast_host=get("ICECAST_HOST", "icecast"),
             icecast_port=get_int("ICECAST_PORT", 8000),
             icecast_mount=get("ICECAST_MOUNT", "/lullaby.mp3"),
             source_password=get("ICECAST_SOURCE_PASSWORD"),
-            mode=get("SYNTH_MODE", "tone"),
-            soundfont=get("SOUNDFONT", "/soundfonts/musicbox.sf2"),
+            mode=get("SYNTH_MODE", "file"),
+            soundfont=get("SOUNDFONT", "/soundfonts/GeneralUser-GS.sf2"),
             midi_dir=get("MIDI_DIR", "/midi"),
+            midi_file=env.get("MIDI_FILE") or None,
+            gain=get_float("GAIN", 0.8),
+            force_preset=get_preset("FORCE_PRESET", "0:10"),
+            mute_percussion=get_bool("MUTE_PERCUSSION", True),
+            song_gap_seconds=get_float("SONG_GAP_SECONDS", 4.0),
             sample_rate=get_int("SAMPLE_RATE", 44100),
             mp3_bitrate=get("MP3_BITRATE", "128k"),
             lead_seconds=get_float("LEAD_SECONDS", 0.25),
@@ -86,6 +120,13 @@ class Config:
             errors.append(f"LEAD_SECONDS must be between 0.05 and 5 (got {cfg.lead_seconds})")
         if not 64 <= cfg.block_frames <= 8192:
             errors.append(f"BLOCK_FRAMES must be between 64 and 8192 (got {cfg.block_frames})")
+        if not 0 < cfg.gain <= 10:
+            errors.append(f"GAIN must be above 0 and at most 10 (got {cfg.gain})")
+        if not 0 <= cfg.song_gap_seconds <= 600:
+            errors.append(f"SONG_GAP_SECONDS must be between 0 and 600 (got {cfg.song_gap_seconds})")
+        if cfg.mode in SYNTH_MODES and cfg.soundfont and not os.path.isfile(cfg.soundfont):
+            errors.append(f"SoundFont not found: {cfg.soundfont} (put it in the soundfonts "
+                          f"folder and set SOUNDFONT to its path inside the container)")
         if cfg.source_password and cfg.source_password.startswith("change-me"):
             errors.append("ICECAST_SOURCE_PASSWORD still has the example value")
 

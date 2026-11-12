@@ -26,9 +26,14 @@ services:
       ICECAST_PORT: ${ICECAST_PORT:-8000}
       ICECAST_MOUNT: ${ICECAST_MOUNT:-/lullaby.mp3}
       ICECAST_SOURCE_PASSWORD: ${ICECAST_SOURCE_PASSWORD:?set ICECAST_SOURCE_PASSWORD in .env}
-      SYNTH_MODE: ${SYNTH_MODE:-tone}
-      SOUNDFONT: ${SOUNDFONT:-/soundfonts/musicbox.sf2}
+      SYNTH_MODE: ${SYNTH_MODE:-file}
+      SOUNDFONT: ${SOUNDFONT:-/soundfonts/GeneralUser-GS.sf2}
+      FORCE_PRESET: ${FORCE_PRESET:-0:10}
+      MUTE_PERCUSSION: ${MUTE_PERCUSSION:-true}
+      GAIN: ${GAIN:-0.8}
       MIDI_DIR: /midi
+      MIDI_FILE: ${MIDI_FILE:-}
+      SONG_GAP_SECONDS: ${SONG_GAP_SECONDS:-4}
       SAMPLE_RATE: ${SAMPLE_RATE:-44100}
       MP3_BITRATE: ${MP3_BITRATE:-128k}
     volumes:

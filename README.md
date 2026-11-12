@@ -18,8 +18,8 @@ MIDI files → Python "mechanism" → FluidSynth (in-process, pyfluidsynth)
 
 This repo is only the audio pipeline; Home Assistant does the casting.
 
-> **Status:** stage 1 of 4. Icecast plus a test tone. FluidSynth, the playlist
-> loop, and the mechanism hooks are coming.
+> **Status:** stage 2 of 4. FluidSynth loops one MIDI file through the full
+> pipeline. The playlist loop and the mechanism hooks are coming.
 
 ## Layout
 
@@ -30,7 +30,11 @@ synth/
   supervisor.py           runs `python -m lullaby | ffmpeg`, restarts on failure
   healthcheck.py          healthy = live source on the mount + fresh heartbeat
   lullaby/                the synth package (writes PCM to stdout)
+    midi.py               MIDI file → timed events
+    synth.py              FluidSynth wrapper (forced preset, percussion mute)
+    player.py             sample-accurate playback, gaps, error recovery
     encoder.py            the ffmpeg command (the only place it's defined)
+  tests/                  unit tests (python -m unittest discover -s tests)
 scripts/
   listen.sh               play the Icecast mount on this machine
   local-play.sh           run the synth with no Docker/Icecast
@@ -38,6 +42,9 @@ soundfonts/, midi/        default local mount points (contents git-ignored)
 ```
 
 ## Quick start
+
+Put a SoundFont in `soundfonts/` and at least one MIDI file in `midi/`
+(see [SoundFont](#soundfont)), then:
 
 ```sh
 cp .env.example .env
@@ -82,11 +89,35 @@ scripts/local-play.sh               # first run creates .venv with Python 3.13
 scripts/local-play.sh --wav /tmp/test.wav --seconds 20 && afplay /tmp/test.wav
 ```
 
-### What you should hear (stage 1)
+### What you should hear (stage 2)
 
-A soft tone: one second of A, one second of silence, one second of E, one
-second of silence, repeating. The silences are real rendered zeros, just like
-the gaps between songs will be, so the stream itself never pauses.
+The first file in `midi/` (or `MIDI_FILE`) on the music box, then about 4 s of
+ringing and silence, then the song again, forever. The log shows a
+`playing <file>` line each time it starts.
+
+For the stage-1 test tone instead, use `SYNTH_MODE=tone` in `.env` or
+`scripts/local-play.sh --mode tone`.
+
+## SoundFont
+
+A MIDI file is only notes; the SoundFont supplies the sound. The default is
+[GeneralUser GS](https://www.schristiancollins.com/generaluser) by S.
+Christian Collins, a free General MIDI bank whose license allows use without
+restriction. Its preset 0:10 is a pleasant Music Box.
+
+```sh
+curl -L -o soundfonts/GeneralUser-GS.sf2 \
+  https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/main/GeneralUser-GS.sf2
+```
+
+Any `.sf2` works. Set `SOUNDFONT` to its path inside the container, and set
+`FORCE_PRESET` to its music-box preset. For a SoundFont with a single preset,
+that's usually `0:0`. Many "free" SoundFonts online contain samples of unclear
+origin, so check the license on the source page.
+
+Most lullaby MIDI files ask for piano. `FORCE_PRESET` makes every melodic
+channel play the music box regardless, and `MUTE_PERCUSSION` drops drum parts.
+`FORCE_PRESET=off` plays the instruments the file asks for.
 
 ## Configuration (.env)
 
@@ -98,10 +129,15 @@ the gaps between songs will be, so the stream itself never pauses.
 | `ICECAST_SOURCE_PASSWORD` | (required) | Password the synth uses to push the stream |
 | `ICECAST_ADMIN_PASSWORD` | (required) | Icecast admin web UI password (user `admin`) |
 | `ICECAST_BURST_SIZE` | `16384` | Bytes sent instantly to new listeners (≈1 s at 128k) |
-| `SYNTH_MODE` | `tone` | What the synth plays |
+| `SYNTH_MODE` | `file` | `file` (loop one MIDI file) or `tone` (test tone) |
 | `SOUNDFONTS_HOST_DIR` | `./soundfonts` | Host folder mounted at `/soundfonts` |
 | `MIDI_HOST_DIR` | `./midi` | Host folder mounted at `/midi` |
-| `SOUNDFONT` | `/soundfonts/musicbox.sf2` | SoundFont path inside the container |
+| `SOUNDFONT` | `/soundfonts/GeneralUser-GS.sf2` | SoundFont path inside the container |
+| `FORCE_PRESET` | `0:10` | `bank:preset` for all melodic channels, or `off` |
+| `MUTE_PERCUSSION` | `true` | Drop drum notes (MIDI channel 10) |
+| `GAIN` | `0.8` | FluidSynth output level (FluidSynth's own default, 0.2, is very quiet) |
+| `MIDI_FILE` | (empty) | File to loop, e.g. `/midi/song.mid`; empty = first in the folder |
+| `SONG_GAP_SECONDS` | `4` | Time between plays; the last notes ring out in it |
 | `SAMPLE_RATE` | `44100` | Synth and MP3 sample rate |
 | `MP3_BITRATE` | `128k` | MP3 bitrate |
 | `TZ` | `UTC` | Timezone for log timestamps |
@@ -129,7 +165,10 @@ Advanced settings, not in `.env.example`: `LEAD_SECONDS` (0.25) and
    Docker only *reports* health; restarts are handled by the supervisor
    inside the container, plus `restart: unless-stopped`.
 
-To swap MIDI files, drop them into the MIDI folder; no rebuild needed.
+To swap MIDI files, drop them into the MIDI folder; no rebuild needed. Files
+are looked up again before each play. Extensions `.mid`/`.midi` are matched in
+any case, and subfolders are included. A changed SoundFont needs
+`docker compose restart synth`.
 
 ## Home Assistant
 
@@ -156,7 +195,10 @@ ERROR supervisor: PIPELINE DOWN after 1s: ffmpeg exited with code 1. Restart #1 
 
 Restarts back off from 1 s to 30 s while it keeps failing. The pipeline is
 also restarted if the synth stops producing audio for 20 s (the heartbeat).
-Bad configuration fails at startup with every problem listed.
+Bad configuration (including a missing SoundFont or a preset it doesn't have)
+fails at startup with every problem listed. A missing or unreadable MIDI file
+doesn't stop the stream: it logs the error with a traceback, streams silence,
+and tries again 30 s later.
 
 Check health directly:
 

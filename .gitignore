@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .venv/
 *.wav
+.DS_Store
 
 # Local test media (mounted into the container; not part of the repo)
 soundfonts/*

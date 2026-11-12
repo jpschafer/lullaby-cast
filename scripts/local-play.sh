@@ -32,7 +32,10 @@ if [ -f .env ]; then
 fi
 # Inside Docker these point at mounted folders; locally use the repo's folders.
 export MIDI_DIR="${LOCAL_MIDI_DIR:-$PWD/midi}"
-export SOUNDFONT="${LOCAL_SOUNDFONT:-$PWD/soundfonts/$(basename "${SOUNDFONT:-musicbox.sf2}")}"
+export SOUNDFONT="${LOCAL_SOUNDFONT:-$PWD/soundfonts/$(basename "${SOUNDFONT:-GeneralUser-GS.sf2}")}"
+if [ -n "${MIDI_FILE:-}" ]; then
+  export MIDI_FILE="$PWD/midi/${MIDI_FILE#/midi/}"
+fi
 export HEARTBEAT_PATH="${TMPDIR:-/tmp}/lullaby-heartbeat"
 RATE="${SAMPLE_RATE:-44100}"
 

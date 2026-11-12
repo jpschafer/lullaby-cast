@@ -12,11 +12,16 @@ log = logging.getLogger(__name__)
 CHANNELS = 2
 
 
+class OutputFinished(Exception):
+    """Raised by write() once `max_frames` have been written."""
+
+
 class PcmOutput:
-    def __init__(self, pacer, heartbeat_path=None, stream=None):
+    def __init__(self, pacer, heartbeat_path=None, stream=None, max_frames=None):
         self.pacer = pacer
         self.heartbeat_path = heartbeat_path
         self.stream = stream if stream is not None else sys.stdout.buffer
+        self.max_frames = max_frames
         self._last_beat = None
 
     def write(self, block) -> None:
@@ -30,6 +35,8 @@ class PcmOutput:
             log.error("encoder closed the pipe (ffmpeg exited?); stopping")
             raise
         self._beat()
+        if self.max_frames is not None and self.pacer.frames >= self.max_frames:
+            raise OutputFinished
 
     def _beat(self) -> None:
         if not self.heartbeat_path:
