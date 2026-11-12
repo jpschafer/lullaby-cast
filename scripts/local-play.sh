@@ -27,8 +27,13 @@ if [ ! -x .venv/bin/python ]; then
   fi
 fi
 
+# Load .env, but let variables set on the command line win
+# (e.g. SESSION_MINUTES=30 scripts/local-play.sh ...).
 if [ -f .env ]; then
-  set -a; . ./.env; set +a
+  while IFS='=' read -r key value; do
+    case "$key" in ''|\#*) continue ;; esac
+    eval "[ -n \"\${$key+set}\" ]" || export "$key=$value"
+  done < .env
 fi
 # Inside Docker these point at mounted folders; locally use the repo's folders.
 export MIDI_DIR="${LOCAL_MIDI_DIR:-$PWD/midi}"

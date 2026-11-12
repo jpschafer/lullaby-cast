@@ -37,6 +37,10 @@ class Config:
     # "always": one endless session (local testing without Icecast).
     session_start: str
     session_grace_seconds: float
+    # Passed to the mechanism hooks as ctx.session_length (seconds); None if unset.
+    session_length: float
+    # How far shape_note may move a note, in seconds.
+    humanize_window: float
     sample_rate: int
     mp3_bitrate: str
     # How far audio may be rendered ahead of the wall clock.
@@ -108,6 +112,8 @@ class Config:
             song_gap_seconds=get_float("SONG_GAP_SECONDS", 4.0),
             session_start=get("SESSION_START", "listener"),
             session_grace_seconds=get_float("SESSION_GRACE_SECONDS", 20.0),
+            session_length=(get_float("SESSION_MINUTES", 0) * 60) if env.get("SESSION_MINUTES") else None,
+            humanize_window=get_float("HUMANIZE_WINDOW_MS", 50) / 1000,
             sample_rate=get_int("SAMPLE_RATE", 44100),
             mp3_bitrate=get("MP3_BITRATE", "128k"),
             lead_seconds=get_float("LEAD_SECONDS", 0.25),
@@ -135,6 +141,10 @@ class Config:
             errors.append(f"SESSION_START must be one of {SESSION_STARTS} (got {cfg.session_start!r})")
         if not 0 <= cfg.session_grace_seconds <= 600:
             errors.append(f"SESSION_GRACE_SECONDS must be between 0 and 600 (got {cfg.session_grace_seconds})")
+        if cfg.session_length is not None and cfg.session_length <= 0:
+            errors.append("SESSION_MINUTES must be above 0, or empty")
+        if not 0 <= cfg.humanize_window <= 0.5:
+            errors.append(f"HUMANIZE_WINDOW_MS must be between 0 and 500 (got {cfg.humanize_window * 1000:g})")
         if cfg.mode in SYNTH_MODES and cfg.soundfont and not os.path.isfile(cfg.soundfont):
             errors.append(f"SoundFont not found: {cfg.soundfont} (put it in the soundfonts "
                           f"folder and set SOUNDFONT to its path inside the container)")

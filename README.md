@@ -21,8 +21,8 @@ MIDI files → Python "mechanism" → FluidSynth (in-process, pyfluidsynth)
 
 This repo is only the audio pipeline; Home Assistant does the casting.
 
-> **Status:** stage 3 of 4. Listener-triggered playlist sessions through the
-> full pipeline. The mechanism hooks are coming.
+> **Status:** the plumbing is complete. The musical mechanism
+> (`synth/lullaby/mechanism.py`) has placeholder hooks, ready to be written.
 
 ## Layout
 
@@ -33,6 +33,8 @@ synth/
   supervisor.py           runs `python -m lullaby | ffmpeg`, restarts on failure
   healthcheck.py          healthy = live source on the mount + fresh heartbeat
   lullaby/                the synth package (writes PCM to stdout)
+    mechanism.py          ← the musical mechanism: three hooks (yours)
+    context.py            what the hooks receive
     midi.py               MIDI file → timed events
     synth.py              FluidSynth wrapper (forced preset, percussion mute)
     player.py             sample-accurate playback, sessions, playlist, error recovery
@@ -151,6 +153,41 @@ Most lullaby MIDI files ask for piano. `FORCE_PRESET` makes every melodic
 channel play the music box regardless, and `MUTE_PERCUSSION` drops drum parts.
 `FORCE_PRESET=off` plays the instruments the file asks for.
 
+## The mechanism
+
+`synth/lullaby/mechanism.py` is where the music gets its character. The
+plumbing calls three hooks; the placeholders change nothing.
+
+| Hook | Called | Returns |
+|---|---|---|
+| `choose_next_song(library, history, ctx)` | before each song | a path from `library`, or `None` to stop for the night (silence until the session ends) |
+| `scale_time(delta, ctx)` | at the start of every gap between events | seconds to actually wait (`2 * delta` = half speed); e.g. a spring winding down |
+| `shape_note(note, ctx)` | for every struck note | the note with new `velocity`/`offset` (±`HUMANIZE_WINDOW_MS`), or `None` to drop it; e.g. humanization |
+
+The contexts (`context.py`) carry `elapsed` (seconds since the session
+started), `session_length` (from `SESSION_MINUTES`), and for the playback
+hooks, the song, its length, and where in it you are, both in the file's own
+timeline and as played.
+
+Rendering is paced to the wall clock, so a hook decides what happens *now*:
+each `scale_time` call is made as its gap begins. If a hook raises or returns
+something unusable, the error is logged with a traceback (once per song, then
+counted), the value is used unmodified, and the music continues.
+
+To hear a mechanism quickly, render offline. `elapsed` is audio time, so a
+30-minute session renders in seconds:
+
+```sh
+SESSION_MINUTES=30 scripts/local-play.sh --wav /tmp/night.wav --seconds 1800
+afplay /tmp/night.wav     # or open it in an audio editor and jump to the end
+```
+
+Run the unit tests after changing the plumbing (not needed for the mechanism):
+
+```sh
+cd synth && ../.venv/bin/python -m unittest discover -s tests
+```
+
 ## Configuration (.env)
 
 | Variable | Default | Meaning |
@@ -164,6 +201,8 @@ channel play the music box regardless, and `MUTE_PERCUSSION` drops drum parts.
 | `SYNTH_MODE` | `playlist` | `playlist`, `file` (loop one MIDI file) or `tone` (test tone) |
 | `SESSION_START` | `listener` | `listener`: play while Icecast has listeners; `always`: never stop |
 | `SESSION_GRACE_SECONDS` | `20` | How long after the last listener leaves before the session ends |
+| `SESSION_MINUTES` | (empty) | Passed to the hooks as `ctx.session_length`; the plumbing doesn't enforce it |
+| `HUMANIZE_WINDOW_MS` | `50` | Furthest `shape_note` may move a note |
 | `SOUNDFONTS_HOST_DIR` | `./soundfonts` | Host folder mounted at `/soundfonts` |
 | `MIDI_HOST_DIR` | `./midi` | Host folder mounted at `/midi` |
 | `SOUNDFONT` | `/soundfonts/GeneralUser-GS.sf2` | SoundFont path inside the container |

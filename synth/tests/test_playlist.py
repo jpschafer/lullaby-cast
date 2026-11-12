@@ -3,9 +3,11 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import mido
 
+from lullaby import mechanism
 from lullaby.output import OutputFinished
 from lullaby.player import in_order
 from test_player import SR, make_player
@@ -81,9 +83,11 @@ class PlaylistTests(unittest.TestCase):
         self.assertEqual(first_notes(synth)[:2], [60, 64])
 
     def test_chooser_returning_none_streams_silence(self):
-        player, synth, stream = make_player(max_seconds=3)
+        mech = SimpleNamespace(**vars(mechanism))
+        mech.choose_next_song = lambda lib, hist, ctx: None
+        player, synth, stream = make_player(max_seconds=3, mechanism=mech)
         with self.assertRaises(OutputFinished):
-            player.loop_playlist(self.dir.name, choose_next_song=lambda lib, hist: None)
+            player.loop_playlist(self.dir.name)
         self.assertEqual(synth.handled, [])
         self.assertGreater(stream.bytes, 0)
 

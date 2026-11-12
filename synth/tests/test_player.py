@@ -62,11 +62,11 @@ class CollectStream:
         pass
 
 
-def make_player(max_seconds, block=64):
+def make_player(max_seconds, block=64, **kwargs):
     synth = FakeSynth()
     stream = CollectStream()
     out = PcmOutput(UnpacedClock(SR, 0.1), stream=stream, max_frames=int(max_seconds * SR))
-    return Player(synth, out, SR, block_frames=block, gap_seconds=1.0), synth, stream
+    return Player(synth, out, SR, block_frames=block, gap_seconds=1.0, **kwargs), synth, stream
 
 
 class MidiTests(unittest.TestCase):
