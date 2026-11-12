@@ -68,11 +68,12 @@ installed. You can also paste the URL into VLC → *File → Open Network*.
 Seeing it in `http://<host>:8000/` (the Icecast status page) confirms the
 mount is live.
 
-**2. The synth alone, live, no Docker.** Needs Python 3.11+ and ffplay:
+**2. The synth alone, live, no Docker.** Needs [uv](https://docs.astral.sh/uv/)
+(or Python 3.11+) and ffplay:
 
 ```sh
-brew install python@3.13 ffmpeg     # fluidsynth too, from stage 2 on
-scripts/local-play.sh
+brew install uv ffmpeg              # fluidsynth too, from stage 2 on
+scripts/local-play.sh               # first run creates .venv with Python 3.13
 ```
 
 **3. Offline to a WAV file**, rendered faster than real time:

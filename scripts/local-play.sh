@@ -6,19 +6,25 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-PY=""
-for cand in python3.13 python3.12 python3.11 python3; do
-  if command -v "$cand" >/dev/null &&
-     "$cand" -c 'import sys; sys.exit(sys.version_info < (3, 11))' 2>/dev/null; then
-    PY=$cand; break
-  fi
-done
-[ -n "$PY" ] || { echo "ERROR: need Python 3.11+ (macOS: brew install python@3.13)" >&2; exit 1; }
-
 if [ ! -x .venv/bin/python ]; then
-  echo "Creating .venv with $PY ..."
-  "$PY" -m venv .venv
-  .venv/bin/pip install -q -r synth/requirements.txt
+  if command -v uv >/dev/null; then
+    # Same Python as the container (Debian trixie).
+    echo "Creating .venv with uv (Python 3.13) ..."
+    uv venv -q --python 3.13 .venv
+    uv pip install -q --python .venv/bin/python -r synth/requirements.txt
+  else
+    PY=""
+    for cand in python3.13 python3.12 python3.11 python3; do
+      if command -v "$cand" >/dev/null &&
+         "$cand" -c 'import sys; sys.exit(sys.version_info < (3, 11))' 2>/dev/null; then
+        PY=$cand; break
+      fi
+    done
+    [ -n "$PY" ] || { echo "ERROR: need uv (brew install uv) or Python 3.11+" >&2; exit 1; }
+    echo "Creating .venv with $PY ..."
+    "$PY" -m venv .venv
+    .venv/bin/pip install -q -r synth/requirements.txt
+  fi
 fi
 
 if [ -f .env ]; then
