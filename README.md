@@ -13,13 +13,16 @@ MIDI files → Python "mechanism" → FluidSynth (in-process, pyfluidsynth)
   default 0.25 s, ahead), so timing effects land when they're heard.
 - The stream never goes silent at the byte level: gaps and errors are filled
   with rendered silence.
+- Bedtime sessions: silence until the Nest Hub (or any player) connects, then
+  the playlist from the top; back to silence once nobody has been listening
+  for `SESSION_GRACE_SECONDS`.
 - A supervisor restarts the synth→ffmpeg pipe if either side dies or stalls,
   and logs it at `ERROR`.
 
 This repo is only the audio pipeline; Home Assistant does the casting.
 
-> **Status:** stage 2 of 4. FluidSynth loops one MIDI file through the full
-> pipeline. The playlist loop and the mechanism hooks are coming.
+> **Status:** stage 3 of 4. Listener-triggered playlist sessions through the
+> full pipeline. The mechanism hooks are coming.
 
 ## Layout
 
@@ -32,7 +35,8 @@ synth/
   lullaby/                the synth package (writes PCM to stdout)
     midi.py               MIDI file → timed events
     synth.py              FluidSynth wrapper (forced preset, percussion mute)
-    player.py             sample-accurate playback, gaps, error recovery
+    player.py             sample-accurate playback, sessions, playlist, error recovery
+    icecast.py            Icecast status: live mount, listener count
     encoder.py            the ffmpeg command (the only place it's defined)
   tests/                  unit tests (python -m unittest discover -s tests)
 scripts/
@@ -89,11 +93,26 @@ scripts/local-play.sh               # first run creates .venv with Python 3.13
 scripts/local-play.sh --wav /tmp/test.wav --seconds 20 && afplay /tmp/test.wav
 ```
 
-### What you should hear (stage 2)
+### What you should hear (stage 3)
 
-The first file in `midi/` (or `MIDI_FILE`) on the music box, then about 4 s of
-ringing and silence, then the song again, forever. The log shows a
-`playing <file>` line each time it starts.
+Every file in `midi/` on the music box, in alphabetical order, with about 4 s
+of ringing and silence between songs, wrapping around at the end.
+
+Through Icecast, the playlist starts only when you connect. Watch
+`docker compose logs -f synth` while you run `scripts/listen.sh`:
+
+```
+listeners on /lullaby.mp3: 0 -> 1
+session started
+playing brahms-lullaby-wiegenlied-piano.mid (72.0s, 409 events)
+...
+listeners on /lullaby.mp3: 1 -> 0
+session ended after 3.2 min, 3 song(s)
+```
+
+Each new connection after a session ends starts again from the first song.
+`local-play.sh` has no Icecast, so it always plays (`SESSION_START=always`).
+To loop a single file instead, use `SYNTH_MODE=file`.
 
 For the stage-1 test tone instead, use `SYNTH_MODE=tone` in `.env` or
 `scripts/local-play.sh --mode tone`.
@@ -129,14 +148,16 @@ channel play the music box regardless, and `MUTE_PERCUSSION` drops drum parts.
 | `ICECAST_SOURCE_PASSWORD` | (required) | Password the synth uses to push the stream |
 | `ICECAST_ADMIN_PASSWORD` | (required) | Icecast admin web UI password (user `admin`) |
 | `ICECAST_BURST_SIZE` | `16384` | Bytes sent instantly to new listeners (≈1 s at 128k) |
-| `SYNTH_MODE` | `file` | `file` (loop one MIDI file) or `tone` (test tone) |
+| `SYNTH_MODE` | `playlist` | `playlist`, `file` (loop one MIDI file) or `tone` (test tone) |
+| `SESSION_START` | `listener` | `listener`: play while Icecast has listeners; `always`: never stop |
+| `SESSION_GRACE_SECONDS` | `20` | How long after the last listener leaves before the session ends |
 | `SOUNDFONTS_HOST_DIR` | `./soundfonts` | Host folder mounted at `/soundfonts` |
 | `MIDI_HOST_DIR` | `./midi` | Host folder mounted at `/midi` |
 | `SOUNDFONT` | `/soundfonts/GeneralUser-GS.sf2` | SoundFont path inside the container |
 | `FORCE_PRESET` | `0:10` | `bank:preset` for all melodic channels, or `off` |
 | `MUTE_PERCUSSION` | `true` | Drop drum notes (MIDI channel 10) |
 | `GAIN` | `0.8` | FluidSynth output level (FluidSynth's own default, 0.2, is very quiet) |
-| `MIDI_FILE` | (empty) | File to loop, e.g. `/midi/song.mid`; empty = first in the folder |
+| `MIDI_FILE` | (empty) | `file` mode: file to loop, e.g. `/midi/song.mid`; empty = first in the folder |
 | `SONG_GAP_SECONDS` | `4` | Time between plays; the last notes ring out in it |
 | `SAMPLE_RATE` | `44100` | Synth and MP3 sample rate |
 | `MP3_BITRATE` | `128k` | MP3 bitrate |
@@ -219,5 +240,11 @@ docker compose exec synth python /app/healthcheck.py
   source password doesn't match. Check `docker compose logs icecast`.
 - **`no live source on /lullaby.mp3`** in the healthcheck: the pipeline is down
   or still starting. Look for `PIPELINE DOWN` lines.
+- **The stream connects but it's silent.** In `playlist` mode, check the synth
+  log for `session started`. If it's missing, the synth can't read Icecast's
+  status: look for `cannot read Icecast status`.
+- **Some songs are much louder than others.** With `FORCE_PRESET`, every part
+  of an orchestral MIDI file becomes a music box, so busy arrangements come
+  out louder than solo piano ones. Lower `GAIN` if the loudest one is too much.
 - **Delay between rendering and hearing.** Icecast's burst plus the Cast buffer
   add a few seconds. Lower `ICECAST_BURST_SIZE` if needed.

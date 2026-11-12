@@ -73,7 +73,7 @@ def main(argv=None) -> int:
             for block in tone_blocks(cfg.sample_rate, cfg.block_frames):
                 out.write(block)
         else:
-            run_file(cfg, out)
+            run_synth(cfg, out)
     except OutputFinished:
         pass
     except BrokenPipeError:
@@ -90,17 +90,28 @@ def main(argv=None) -> int:
     return 0
 
 
-def run_file(cfg, out) -> None:
+def run_synth(cfg, out) -> None:
     # Imported here so tone mode works without FluidSynth installed.
+    from .icecast import ListenerWatch
     from .player import Player
     from .synth import Synth
 
     log.info("SoundFont %s, gain %.2f", cfg.soundfont, cfg.gain)
     synth = Synth(cfg.soundfont, cfg.sample_rate, cfg.gain,
                   force_preset=cfg.force_preset, mute_percussion=cfg.mute_percussion)
+    session_active = None
+    if cfg.mode == "playlist" and cfg.session_start == "listener":
+        watch = ListenerWatch(cfg.icecast_host, cfg.icecast_port, cfg.icecast_mount,
+                              grace_seconds=cfg.session_grace_seconds)
+        session_active = lambda: watch.active  # noqa: E731
+        log.info("waiting for a listener on %s (streaming silence until then)", cfg.icecast_mount)
+    player = Player(synth, out, cfg.sample_rate, cfg.block_frames, cfg.song_gap_seconds,
+                    session_active=session_active)
     try:
-        Player(synth, out, cfg.sample_rate, cfg.block_frames, cfg.song_gap_seconds) \
-            .loop_file(cfg.midi_file, cfg.midi_dir)
+        if cfg.mode == "file":
+            player.loop_file(cfg.midi_file, cfg.midi_dir)
+        else:
+            player.loop_playlist(cfg.midi_dir)
     finally:
         synth.close()
 

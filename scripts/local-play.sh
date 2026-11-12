@@ -37,6 +37,8 @@ if [ -n "${MIDI_FILE:-}" ]; then
   export MIDI_FILE="$PWD/midi/${MIDI_FILE#/midi/}"
 fi
 export HEARTBEAT_PATH="${TMPDIR:-/tmp}/lullaby-heartbeat"
+# No Icecast here to report listeners, so always be "in session".
+export SESSION_START=always
 RATE="${SAMPLE_RATE:-44100}"
 
 cd synth

@@ -6,8 +6,9 @@ import os
 import re
 from dataclasses import dataclass
 
-MODES = ("tone", "file")
-SYNTH_MODES = ("file",)  # modes that need FluidSynth and a SoundFont
+MODES = ("tone", "file", "playlist")
+SYNTH_MODES = ("file", "playlist")  # modes that need FluidSynth and a SoundFont
+SESSION_STARTS = ("listener", "always")
 MP3_SAMPLE_RATES = (22050, 24000, 32000, 44100, 48000)
 HEARTBEAT_PATH = "/tmp/lullaby-heartbeat"
 
@@ -32,6 +33,10 @@ class Config:
     force_preset: tuple
     mute_percussion: bool
     song_gap_seconds: float
+    # "listener": a session runs while Icecast reports listeners.
+    # "always": one endless session (local testing without Icecast).
+    session_start: str
+    session_grace_seconds: float
     sample_rate: int
     mp3_bitrate: str
     # How far audio may be rendered ahead of the wall clock.
@@ -93,7 +98,7 @@ class Config:
             icecast_port=get_int("ICECAST_PORT", 8000),
             icecast_mount=get("ICECAST_MOUNT", "/lullaby.mp3"),
             source_password=get("ICECAST_SOURCE_PASSWORD"),
-            mode=get("SYNTH_MODE", "file"),
+            mode=get("SYNTH_MODE", "playlist"),
             soundfont=get("SOUNDFONT", "/soundfonts/GeneralUser-GS.sf2"),
             midi_dir=get("MIDI_DIR", "/midi"),
             midi_file=env.get("MIDI_FILE") or None,
@@ -101,6 +106,8 @@ class Config:
             force_preset=get_preset("FORCE_PRESET", "0:10"),
             mute_percussion=get_bool("MUTE_PERCUSSION", True),
             song_gap_seconds=get_float("SONG_GAP_SECONDS", 4.0),
+            session_start=get("SESSION_START", "listener"),
+            session_grace_seconds=get_float("SESSION_GRACE_SECONDS", 20.0),
             sample_rate=get_int("SAMPLE_RATE", 44100),
             mp3_bitrate=get("MP3_BITRATE", "128k"),
             lead_seconds=get_float("LEAD_SECONDS", 0.25),
@@ -124,6 +131,10 @@ class Config:
             errors.append(f"GAIN must be above 0 and at most 10 (got {cfg.gain})")
         if not 0 <= cfg.song_gap_seconds <= 600:
             errors.append(f"SONG_GAP_SECONDS must be between 0 and 600 (got {cfg.song_gap_seconds})")
+        if cfg.session_start and cfg.session_start not in SESSION_STARTS:
+            errors.append(f"SESSION_START must be one of {SESSION_STARTS} (got {cfg.session_start!r})")
+        if not 0 <= cfg.session_grace_seconds <= 600:
+            errors.append(f"SESSION_GRACE_SECONDS must be between 0 and 600 (got {cfg.session_grace_seconds})")
         if cfg.mode in SYNTH_MODES and cfg.soundfont and not os.path.isfile(cfg.soundfont):
             errors.append(f"SoundFont not found: {cfg.soundfont} (put it in the soundfonts "
                           f"folder and set SOUNDFONT to its path inside the container)")
