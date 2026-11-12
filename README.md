@@ -66,7 +66,20 @@ refuses to start while they still say `change-me…`.
 There are three ways to test, from most to least of the real pipeline.
 
 **1. The whole stack, listened to from the Mac.** Run `docker compose up` on
-the Mac (needs Docker Desktop or OrbStack), or on Unraid. Then run:
+the Mac or on Unraid. For Docker on a Mac without Docker Desktop, use
+[Colima](https://github.com/abiosoft/colima) (headless; forwards ports to
+localhost):
+
+```sh
+brew install colima docker docker-compose
+mkdir -p ~/.docker && echo '{"cliPluginsExtraDirs": ["/opt/homebrew/lib/docker/cli-plugins"]}' > ~/.docker/config.json
+colima start
+docker compose up -d --build
+```
+
+Images built on an Apple Silicon Mac are arm64; Unraid builds its own amd64
+images from the same Dockerfiles. Then open
+<http://localhost:8000/lullaby.mp3> in a browser, or run:
 
 ```sh
 scripts/listen.sh                    # http://localhost:8000/lullaby.mp3
@@ -246,5 +259,7 @@ docker compose exec synth python /app/healthcheck.py
 - **Some songs are much louder than others.** With `FORCE_PRESET`, every part
   of an orchestral MIDI file becomes a music box, so busy arrangements come
   out louder than solo piano ones. Lower `GAIN` if the loudest one is too much.
+- **`Unsupported or legacy stream type: "audio/mpeg"`** in the Icecast log is
+  harmless: Icecast 2.4 streams MP3 through its generic handler.
 - **Delay between rendering and hearing.** Icecast's burst plus the Cast buffer
   add a few seconds. Lower `ICECAST_BURST_SIZE` if needed.

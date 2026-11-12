@@ -44,9 +44,14 @@
     </paths>
 
     <logging>
-        <!-- "-" logs to the console so it shows up in `docker logs`. -->
-        <accesslog>-</accesslog>
+        <!-- The error log ("-" = console, so it shows up in `docker logs`)
+             already reports sources and listener counts. The access log
+             would add a line for every 2 s status poll from the synth, so it
+             goes to a small file inside the container instead. -->
         <errorlog>-</errorlog>
+        <accesslog>access.log</accesslog>
+        <logsize>1024</logsize>
+        <logarchive>0</logarchive>
         <loglevel>3</loglevel>
     </logging>
 

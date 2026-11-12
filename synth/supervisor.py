@@ -33,11 +33,24 @@ STARTUP_GRACE_SECONDS = 15
 _stop = threading.Event()
 
 
-def relay(stream, tag) -> None:
+CHILD_LEVELS = {"DEBUG": logging.DEBUG, "INFO": logging.INFO, "WARNING": logging.WARNING,
+                "ERROR": logging.ERROR, "CRITICAL": logging.CRITICAL}
+
+
+def relay(stream, tag, default_level) -> None:
+    """Relay a child's stderr. Synth lines start with their level name
+    ("ERROR lullaby...") and keep it; others use `default_level`."""
+    level = default_level
     for raw in iter(stream.readline, b""):
         line = raw.decode("utf-8", "replace").rstrip()
-        if line:
-            log.info("[%s] %s", tag, line)
+        if not line:
+            continue
+        first = line.split(" ", 1)[0]
+        if first in CHILD_LEVELS:
+            level = CHILD_LEVELS[first]
+            line = line.split(" ", 1)[1] if " " in line else ""
+        # Lines without a level (traceback bodies) keep the previous one.
+        log.log(level, "[%s] %s", tag, line)
     stream.close()
 
 
@@ -74,8 +87,10 @@ def run_pipeline(cfg) -> str:
     # Only ffmpeg holds the read end now, so the synth gets EPIPE if ffmpeg dies.
     synth.stdout.close()
     procs = {"synth": synth, "ffmpeg": encoder}
+    # ffmpeg runs at -loglevel warning, so anything it prints is a warning or worse.
+    levels = {"synth": logging.INFO, "ffmpeg": logging.WARNING}
     for name, proc in procs.items():
-        threading.Thread(target=relay, args=(proc.stderr, name), daemon=True).start()
+        threading.Thread(target=relay, args=(proc.stderr, name, levels[name]), daemon=True).start()
     log.info("pipeline started (synth pid %d, ffmpeg pid %d)", synth.pid, encoder.pid)
 
     started = time.monotonic()
