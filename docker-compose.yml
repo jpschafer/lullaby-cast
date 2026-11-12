@@ -1,0 +1,44 @@
+services:
+  icecast:
+    build: ./icecast
+    image: lullaby-cast-icecast:local
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-UTC}
+      ICECAST_HOSTNAME: ${ICECAST_HOSTNAME:?set ICECAST_HOSTNAME in .env}
+      ICECAST_PORT: ${ICECAST_PORT:-8000}
+      ICECAST_MOUNT: ${ICECAST_MOUNT:-/lullaby.mp3}
+      ICECAST_SOURCE_PASSWORD: ${ICECAST_SOURCE_PASSWORD:?set ICECAST_SOURCE_PASSWORD in .env}
+      ICECAST_ADMIN_PASSWORD: ${ICECAST_ADMIN_PASSWORD:?set ICECAST_ADMIN_PASSWORD in .env}
+      ICECAST_BURST_SIZE: ${ICECAST_BURST_SIZE:-16384}
+    ports:
+      - "${ICECAST_PORT:-8000}:${ICECAST_PORT:-8000}"
+
+  synth:
+    build: ./synth
+    image: lullaby-cast-synth:local
+    restart: unless-stopped
+    depends_on:
+      - icecast
+    environment:
+      TZ: ${TZ:-UTC}
+      ICECAST_HOST: icecast
+      ICECAST_PORT: ${ICECAST_PORT:-8000}
+      ICECAST_MOUNT: ${ICECAST_MOUNT:-/lullaby.mp3}
+      ICECAST_SOURCE_PASSWORD: ${ICECAST_SOURCE_PASSWORD:?set ICECAST_SOURCE_PASSWORD in .env}
+      SYNTH_MODE: ${SYNTH_MODE:-tone}
+      SOUNDFONT: ${SOUNDFONT:-/soundfonts/musicbox.sf2}
+      MIDI_DIR: /midi
+      SAMPLE_RATE: ${SAMPLE_RATE:-44100}
+      MP3_BITRATE: ${MP3_BITRATE:-128k}
+    volumes:
+      - ${SOUNDFONTS_HOST_DIR:-./soundfonts}:/soundfonts:ro
+      - ${MIDI_HOST_DIR:-./midi}:/midi:ro
+    # Healthy = Icecast reports a live source on our mount AND the synth's
+    # heartbeat is fresh. Docker only reports this; the supervisor restarts.
+    healthcheck:
+      test: ["CMD", "python", "/app/healthcheck.py"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3

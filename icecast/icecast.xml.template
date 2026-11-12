@@ -1,0 +1,56 @@
+<icecast>
+    <location>Home</location>
+    <admin>lullaby-cast</admin>
+    <hostname>${ICECAST_HOSTNAME}</hostname>
+
+    <limits>
+        <clients>20</clients>
+        <sources>4</sources>
+        <queue-size>524288</queue-size>
+        <client-timeout>30</client-timeout>
+        <header-timeout>15</header-timeout>
+        <!-- Drop a source that stops sending for this long, so a hung synth
+             shows up as a missing mount instead of a silent stuck one. -->
+        <source-timeout>10</source-timeout>
+        <burst-on-connect>1</burst-on-connect>
+        <burst-size>${ICECAST_BURST_SIZE}</burst-size>
+    </limits>
+
+    <authentication>
+        <source-password>${ICECAST_SOURCE_PASSWORD}</source-password>
+        <relay-password>${ICECAST_ADMIN_PASSWORD}</relay-password>
+        <admin-user>admin</admin-user>
+        <admin-password>${ICECAST_ADMIN_PASSWORD}</admin-password>
+    </authentication>
+
+    <listen-socket>
+        <port>${ICECAST_PORT}</port>
+    </listen-socket>
+
+    <mount type="normal">
+        <mount-name>${ICECAST_MOUNT}</mount-name>
+        <stream-name>lullaby-cast</stream-name>
+        <public>0</public>
+    </mount>
+
+    <fileserve>1</fileserve>
+
+    <paths>
+        <basedir>/usr/share/icecast2</basedir>
+        <logdir>/tmp</logdir>
+        <webroot>/usr/share/icecast2/web</webroot>
+        <adminroot>/usr/share/icecast2/admin</adminroot>
+        <alias source="/" destination="/status.xsl"/>
+    </paths>
+
+    <logging>
+        <!-- "-" logs to the console so it shows up in `docker logs`. -->
+        <accesslog>-</accesslog>
+        <errorlog>-</errorlog>
+        <loglevel>3</loglevel>
+    </logging>
+
+    <security>
+        <chroot>0</chroot>
+    </security>
+</icecast>

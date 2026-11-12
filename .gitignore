@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+*.wav
+
+# Local test media (mounted into the container; not part of the repo)
+soundfonts/*
+midi/*
+!soundfonts/.gitkeep
+!midi/.gitkeep
