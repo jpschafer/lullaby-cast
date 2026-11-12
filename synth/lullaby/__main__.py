@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import logging
 import os
 import sys
@@ -106,7 +107,8 @@ def run_synth(cfg, out) -> None:
         session_active = lambda: watch.active  # noqa: E731
         log.info("waiting for a listener on %s (streaming silence until then)", cfg.icecast_mount)
     player = Player(synth, out, cfg.sample_rate, cfg.block_frames, cfg.song_gap_seconds,
-                    session_active=session_active, humanize_window=cfg.humanize_window,
+                    session_active=session_active, mechanism=load_mechanism(cfg.mechanism_file),
+                    humanize_window=cfg.humanize_window,
                     session_length=cfg.session_length,
                     interlude=None if cfg.interlude == "off" else cfg.interlude)
     try:
@@ -116,6 +118,26 @@ def run_synth(cfg, out) -> None:
             player.loop_playlist(cfg.midi_dir)
     finally:
         synth.close()
+
+
+def load_mechanism(path):
+    """The module at MECHANISM_FILE, or None for the built-in mechanism.py.
+    If it fails to load, the built-in one plays instead, so a typo means
+    plain songs rather than a silent stream."""
+    if not path:
+        return None
+    try:
+        # Loaded as part of the package, so `from .context import ...` works.
+        spec = importlib.util.spec_from_file_location("lullaby.custom_mechanism", path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+    except Exception:
+        log.exception("MECHANISM_FILE %s failed to load; using the built-in mechanism", path)
+        sys.modules.pop("lullaby.custom_mechanism", None)
+        return None
+    log.info("using the mechanism in %s", path)
+    return module
 
 
 class _WavStream:

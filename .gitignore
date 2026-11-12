@@ -10,3 +10,6 @@ soundfonts/*
 midi/*
 !soundfonts/.gitkeep
 !midi/.gitkeep
+
+# Your own mechanism.py, mounted with MECHANISM_FILE
+mechanism/

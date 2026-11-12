@@ -51,6 +51,8 @@ class Config:
     # Frames per rendered block; smaller = finer event timing.
     block_frames: int
     heartbeat_path: str
+    # A mechanism.py to use instead of the built-in one, or None.
+    mechanism_file: str
 
     @classmethod
     def from_env(cls, env=None) -> Config:
@@ -101,7 +103,7 @@ class Config:
             return int(m.group(1)), int(m.group(2))
 
         cfg = cls(
-            icecast_host=get("ICECAST_HOST", "icecast"),
+            icecast_host=get("ICECAST_HOST", "localhost"),
             icecast_port=get_int("ICECAST_PORT", 8000),
             icecast_mount=get("ICECAST_MOUNT", "/lullaby.mp3"),
             source_password=get("ICECAST_SOURCE_PASSWORD"),
@@ -123,6 +125,7 @@ class Config:
             lead_seconds=get_float("LEAD_SECONDS", 0.25),
             block_frames=get_int("BLOCK_FRAMES", 512),
             heartbeat_path=env.get("HEARTBEAT_PATH", HEARTBEAT_PATH),
+            mechanism_file=env.get("MECHANISM_FILE") or None,
         )
 
         if cfg.mode and cfg.mode not in MODES:
@@ -154,6 +157,9 @@ class Config:
         if cfg.mode in SYNTH_MODES and cfg.soundfont and not os.path.isfile(cfg.soundfont):
             errors.append(f"SoundFont not found: {cfg.soundfont} (put it in the soundfonts "
                           f"folder and set SOUNDFONT to its path inside the container)")
+        if cfg.mechanism_file and not os.path.isfile(cfg.mechanism_file):
+            errors.append(f"MECHANISM_FILE not found: {cfg.mechanism_file} (a path inside the "
+                          f"container; leave it empty to use the built-in mechanism)")
         if cfg.source_password and cfg.source_password.startswith("change-me"):
             errors.append("ICECAST_SOURCE_PASSWORD still has the example value")
 

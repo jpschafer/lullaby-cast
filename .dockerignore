@@ -1,0 +1,10 @@
+# Allowlist: only what the Dockerfile copies, so .env, media and the venv
+# can never end up in an image.
+*
+!synth/requirements.txt
+!synth/supervisor.py
+!synth/healthcheck.py
+!synth/icecast.xml.template
+!synth/lullaby
+**/__pycache__
+**/*.pyc

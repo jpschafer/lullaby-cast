@@ -1,6 +1,7 @@
-"""Runs `python -m lullaby | ffmpeg` and restarts the pair if either side dies.
+"""Runs Icecast and `python -m lullaby | ffmpeg` streaming into it, and
+restarts whatever dies.
 
-Every line either child writes to stderr is relayed with a timestamp and a
+Every line a child writes is relayed with a timestamp and an [icecast],
 [synth] or [ffmpeg] tag. Exits, stalls and restarts are logged at ERROR so
 they stand out in `docker logs`.
 """
@@ -9,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -17,6 +19,8 @@ import time
 
 from lullaby.config import Config, ConfigError
 from lullaby.encoder import ffmpeg_command
+from lullaby.icecast import mount_status
+from lullaby.server import CONFIG_PATH, render_config
 
 log = logging.getLogger("supervisor")
 
@@ -29,27 +33,53 @@ BACKOFF_MAX_SECONDS = 30
 # updating (hung Python, or ffmpeg stopped reading).
 STALL_SECONDS = 20
 STARTUP_GRACE_SECONDS = 15
+# How long Icecast gets to start answering HTTP.
+ICECAST_READY_SECONDS = 15
 
 _stop = threading.Event()
 
 
 CHILD_LEVELS = {"DEBUG": logging.DEBUG, "INFO": logging.INFO, "WARNING": logging.WARNING,
                 "ERROR": logging.ERROR, "CRITICAL": logging.CRITICAL}
+# Icecast: "[2026-11-12  21:04:05] INFO source/source_main ..."
+ICECAST_LINE = re.compile(r"\[[^\]]*\] (EROR|WARN|INFO|DBUG) (.*)")
+ICECAST_LEVELS = {"EROR": logging.ERROR, "WARN": logging.WARNING,
+                  "INFO": logging.INFO, "DBUG": logging.DEBUG}
 
 
-def relay(stream, tag, default_level) -> None:
-    """Relay a child's stderr. Synth lines start with their level name
-    ("ERROR lullaby...") and keep it; others use `default_level`."""
+def child_line(line):
+    """Synth lines start with their level name ("ERROR lullaby...")."""
+    first, _, rest = line.partition(" ")
+    if first in CHILD_LEVELS:
+        return CHILD_LEVELS[first], rest
+    return None, line
+
+
+# Icecast 2.4 says this about every MP3 source; it streams them fine.
+ICECAST_HARMLESS = ("Unsupported or legacy stream type",)
+
+
+def icecast_line(line):
+    """Icecast's own timestamp is dropped; ours is on every line."""
+    m = ICECAST_LINE.fullmatch(line)
+    if not m:
+        return None, line
+    if any(text in m.group(2) for text in ICECAST_HARMLESS):
+        return logging.INFO, m.group(2)
+    return ICECAST_LEVELS[m.group(1)], m.group(2)
+
+
+def relay(stream, tag, default_level, parse=child_line) -> None:
+    """Relay a child's output. Lines `parse` finds a level in keep it;
+    others use the previous line's level, starting at `default_level`."""
     level = default_level
     for raw in iter(stream.readline, b""):
         line = raw.decode("utf-8", "replace").rstrip()
         if not line:
             continue
-        first = line.split(" ", 1)[0]
-        if first in CHILD_LEVELS:
-            level = CHILD_LEVELS[first]
-            line = line.split(" ", 1)[1] if " " in line else ""
+        found, line = parse(line)
         # Lines without a level (traceback bodies) keep the previous one.
+        level = found or level
         log.log(level, "[%s] %s", tag, line)
     stream.close()
 
@@ -73,8 +103,38 @@ def heartbeat_age(path):
         return None
 
 
-def run_pipeline(cfg) -> str:
-    """Start both processes and wait until one fails. Returns why it stopped."""
+def start_icecast(xml):
+    with open(CONFIG_PATH, "w") as f:
+        f.write(xml)
+    proc = subprocess.Popen(["icecast2", "-c", CONFIG_PATH], stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    threading.Thread(target=relay, args=(proc.stdout, "icecast", logging.INFO, icecast_line),
+                     daemon=True).start()
+    log.info("icecast started (pid %d)", proc.pid)
+    return proc
+
+
+def wait_for_icecast(cfg, proc):
+    """Wait until Icecast answers its status page. Returns None when it
+    does, or why it didn't."""
+    deadline = time.monotonic() + ICECAST_READY_SECONDS
+    while not _stop.is_set():
+        if proc.poll() is not None:
+            return f"icecast exited with code {proc.returncode}"
+        try:
+            mount_status(cfg.icecast_host, cfg.icecast_port, cfg.icecast_mount, timeout=1)
+            return None
+        except (OSError, ValueError, KeyError):
+            pass
+        if time.monotonic() > deadline:
+            return f"icecast did not answer on port {cfg.icecast_port} within {ICECAST_READY_SECONDS}s"
+        _stop.wait(0.25)
+    return "stop requested"
+
+
+def run_pipeline(cfg, icecast) -> str:
+    """Start the synth and ffmpeg and wait until one of them, or Icecast,
+    fails. Returns why it stopped."""
     try:
         os.remove(cfg.heartbeat_path)
     except FileNotFoundError:
@@ -96,7 +156,8 @@ def run_pipeline(cfg) -> str:
     started = time.monotonic()
     reason = "stop requested"
     while not _stop.wait(POLL_SECONDS):
-        dead = [(n, p.returncode) for n, p in procs.items() if p.poll() is not None]
+        dead = [(n, p.returncode) for n, p in dict(procs, icecast=icecast).items()
+                if p.poll() is not None]
         if dead:
             reason = ", ".join(f"{n} exited with code {code}" for n, code in dead)
             break
@@ -117,6 +178,7 @@ def main() -> int:
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     try:
         cfg = Config.from_env()
+        xml = render_config()
     except ConfigError as e:
         log.error("%s", e)
         return 2
@@ -133,22 +195,33 @@ def main() -> int:
 
     backoff = 1
     restarts = 0
+    icecast = None
     while not _stop.is_set():
         started = time.monotonic()
-        reason = run_pipeline(cfg)
+        # Icecast keeps running across pipeline restarts. It's restarted
+        # only if it died, or stops answering (hung, or still shutting down).
+        if icecast is None or icecast.poll() is not None:
+            icecast = start_icecast(xml)
+        reason = wait_for_icecast(cfg, icecast)
+        if reason:
+            terminate(icecast, "icecast")
+        else:
+            reason = run_pipeline(cfg, icecast)
         if _stop.is_set():
             break
         ran = time.monotonic() - started
         restarts += 1
         if ran >= HEALTHY_RUN_SECONDS:
             backoff = 1
-        log.error("PIPELINE DOWN after %.0fs: %s. Restart #%d in %ds "
+        log.error("STREAM DOWN after %.0fs: %s. Restart #%d in %ds "
                   "(stream is silent until it reconnects)", ran, reason, restarts, backoff)
         if backoff >= BACKOFF_MAX_SECONDS:
-            log.error("pipeline is crash-looping; check the [synth]/[ffmpeg] lines above")
+            log.error("stream is crash-looping; check the [icecast]/[synth]/[ffmpeg] lines above")
         _stop.wait(backoff)
         backoff = min(backoff * 2, BACKOFF_MAX_SECONDS)
 
+    if icecast is not None:
+        terminate(icecast, "icecast")
     log.info("stopped")
     return 0
 

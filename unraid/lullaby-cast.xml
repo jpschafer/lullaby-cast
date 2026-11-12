@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<!-- Unraid template. Copy to /boot/config/plugins/dockerMan/templates-user/my-lullaby-cast.xml,
+     then Docker > Add Container > Template: lullaby-cast. See README "Running on Unraid". -->
+<Container version="2">
+  <Name>lullaby-cast</Name>
+  <Repository>jpschafer/lullaby-cast:latest</Repository>
+  <Registry>https://hub.docker.com/r/jpschafer/lullaby-cast</Registry>
+  <Network>bridge</Network>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/jpschafer/lullaby-cast/issues</Support>
+  <Project>https://github.com/jpschafer/lullaby-cast</Project>
+  <Overview>Streams live-synthesized music-box lullabies from your MIDI files as an MP3 stream (Icecast) for a Google Nest Hub or any Cast device. Put a SoundFont in the soundfonts folder and MIDI files in the midi folder.</Overview>
+  <Category>MediaServer:Music</Category>
+  <WebUI>http://[IP]:[PORT:8000]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/jpschafer/lullaby-cast/main/unraid/lullaby-cast.xml</TemplateURL>
+  <Config Name="Stream port" Target="8000" Default="8000" Mode="tcp" Description="Stream URL: http://SERVER-IP:PORT/lullaby.mp3. Keep host and container port the same unless you also change ICECAST_PORT." Type="Port" Display="always" Required="true" Mask="false">8000</Config>
+  <Config Name="SoundFonts" Target="/soundfonts" Default="/mnt/user/appdata/lullaby-cast/soundfonts" Mode="ro" Description="Folder with your .sf2 file." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/lullaby-cast/soundfonts</Config>
+  <Config Name="MIDI files" Target="/midi" Default="/mnt/user/appdata/lullaby-cast/midi" Mode="ro" Description="Folder of .mid files (subfolders too). Rescanned before every song." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/lullaby-cast/midi</Config>
+  <Config Name="Server IP (ICECAST_HOSTNAME)" Target="ICECAST_HOSTNAME" Default="" Description="LAN IP of this Unraid server. Never localhost." Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="Source password" Target="ICECAST_SOURCE_PASSWORD" Default="" Description="Any random string; letters, digits, . _ - only." Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="Admin password" Target="ICECAST_ADMIN_PASSWORD" Default="" Description="For Icecast's /admin pages; letters, digits, . _ - only." Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="SoundFont file" Target="SOUNDFONT" Default="/soundfonts/GeneralUser-GS.sf2" Description="Path inside the container." Type="Variable" Display="always" Required="true" Mask="false">/soundfonts/GeneralUser-GS.sf2</Config>
+  <Config Name="Time zone" Target="TZ" Default="America/New_York" Description="For log timestamps." Type="Variable" Display="always" Required="false" Mask="false">America/New_York</Config>
+  <Config Name="Interlude" Target="INTERLUDE" Default="alternate" Description="Before each song: phrase, chords, alternate or off." Type="Variable" Display="always" Required="false" Mask="false">alternate</Config>
+  <Config Name="Session minutes" Target="SESSION_MINUTES" Default="" Description="Passed to the mechanism as ctx.session_length. Empty = unset." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Mechanism folder" Target="/mechanism" Default="/mnt/user/appdata/lullaby-cast/mechanism" Mode="ro" Description="Optional: holds your own mechanism.py (see MECHANISM_FILE)." Type="Path" Display="advanced" Required="false" Mask="false">/mnt/user/appdata/lullaby-cast/mechanism</Config>
+  <Config Name="MECHANISM_FILE" Target="MECHANISM_FILE" Default="" Description="Set to /mechanism/mechanism.py to use your own mechanism instead of the built-in one. Restart the container after editing it." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="SYNTH_MODE" Target="SYNTH_MODE" Default="playlist" Description="playlist, file or tone (test tone)." Type="Variable" Display="advanced" Required="false" Mask="false">playlist</Config>
+  <Config Name="SESSION_START" Target="SESSION_START" Default="listener" Description="listener: play while someone listens. always: never stop." Type="Variable" Display="advanced" Required="false" Mask="false">listener</Config>
+  <Config Name="FORCE_PRESET" Target="FORCE_PRESET" Default="0:10" Description="bank:preset on every channel (0:10 = Music Box), or off." Type="Variable" Display="advanced" Required="false" Mask="false">0:10</Config>
+  <Config Name="GAIN" Target="GAIN" Default="0.8" Description="FluidSynth output level." Type="Variable" Display="advanced" Required="false" Mask="false">0.8</Config>
+  <Config Name="SONG_GAP_SECONDS" Target="SONG_GAP_SECONDS" Default="2" Description="Ring-out after each song." Type="Variable" Display="advanced" Required="false" Mask="false">2</Config>
+  <Config Name="ICECAST_MOUNT" Target="ICECAST_MOUNT" Default="/lullaby.mp3" Description="Stream path." Type="Variable" Display="advanced" Required="false" Mask="false">/lullaby.mp3</Config>
+  <Config Name="MP3_BITRATE" Target="MP3_BITRATE" Default="128k" Description="" Type="Variable" Display="advanced" Required="false" Mask="false">128k</Config>
+</Container>
